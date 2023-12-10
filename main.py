@@ -1,29 +1,26 @@
-import requests
-from bs4 import BeautifulSoup
-import firebase_admin
-from firebase_admin import messaging
-from firebase_admin.credentials import Certificate
+import requests, datetime, firebase_admin, bs4
+from firebase_admin import messaging, db, credentials
 from firebase_admin.messaging import Message, Notification, APNSConfig, APNSPayload, Aps
-from flask import Flask
-app = Flask(__name__)
 
-@app.route('/')
-def run():
-    firebase_admin.initialize_app(Certificate("credential.json"))
+def detect_new_cartoon(event, context):
+    cred = credentials.Certificate("key.json")
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': 'https://testing-54a06-default-rtdb.europe-west1.firebasedatabase.app'
+    })
 
     response = requests.get("https://www.telegraph.co.uk")
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = bs4.BeautifulSoup(response.text, "html.parser")
     cartoon = soup.select("img[alt='Matt cartoon']")[0]
     url = cartoon["src"].split("?")[0]
 
-    with open("url.txt", "r") as file:
-        old_url = file.read()
-    with open("url.txt", "w") as file:
-        file.write(url)
+    old_url = db.reference('url').get()
+    db.reference('url').set(url)
 
     if url != old_url:
-        with open("urls.txt", "a") as file:
-            file.write(url + '\n')
+        db.reference('urls').push({
+            'url': url,
+            'timestamp': datetime.datetime.now().isoformat()
+        })
         
         topic = "new_cartoon"
         title = "New Cartoon!"
@@ -34,4 +31,5 @@ def run():
         message = Message(notification=notification, topic=topic, apns=apns)
         messaging.send(message)
 
-app.run('0.0.0.0')
+if __name__ == '__main__':
+    detect_new_cartoon(None, None)
